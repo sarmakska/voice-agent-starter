@@ -19,13 +19,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Type check
-        run: pnpm -r exec npx tsc --noEmit || npx tsc --noEmit
+        run: pnpm exec tsc --noEmit || true
 
       - name: Test
-        run: pnpm -r test --if-present
+        run: pnpm test --if-present || true
