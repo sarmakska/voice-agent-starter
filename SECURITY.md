@@ -4,7 +4,7 @@
 
 If you have found a security issue in this project, please report it privately. Do not open a public GitHub issue.
 
-**Email:** reply@sarmalinux.com
+**Email:** sarma@sarmalinux.com
 
 Please include:
 - A clear description of the issue
