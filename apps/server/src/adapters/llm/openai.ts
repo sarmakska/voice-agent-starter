@@ -1,54 +1,47 @@
 import type { LlmAdapter } from './registry.js'
+import { parseChatSse, toWireMessages, toWireTools } from './sse.js'
 
+const BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
 const API_KEY = process.env.OPENAI_API_KEY || ''
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 
+/**
+ * OpenAI LLM adapter. OpenAI-compatible chat completions with streaming and
+ * function-call passthrough, sharing the same SSE reader as the other adapters.
+ */
 export function openaiLlm(): LlmAdapter {
   return {
-    async *stream({ messages, signal }) {
+    id: `openai:${MODEL}`,
+    async *stream({ messages, signal, tools }) {
       if (!API_KEY) {
-        yield 'OpenAI key not set. Set OPENAI_API_KEY.'
+        yield { type: 'token', text: 'OpenAI key not set. Set OPENAI_API_KEY.' }
         return
       }
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+
+      const body: Record<string, unknown> = {
+        model: MODEL,
+        messages: toWireMessages(messages),
+        stream: true,
+        max_tokens: 300,
+      }
+      if (tools && tools.length > 0) {
+        body.tools = toWireTools(tools)
+        body.tool_choice = 'auto'
+      }
+
+      const res = await fetch(`${BASE_URL}/chat/completions`, {
         method: 'POST',
         signal,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${API_KEY}` },
-        body: JSON.stringify({
-          model: MODEL,
-          messages,
-          stream: true,
-          max_tokens: 200,
-        }),
+        body: JSON.stringify(body),
       })
+
       if (!res.ok || !res.body) {
-        yield `(error ${res.status})`
+        yield { type: 'token', text: `(openai error ${res.status})` }
         return
       }
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buf = ''
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buf += decoder.decode(value, { stream: true })
-        let sep: number
-        while ((sep = buf.indexOf('\n\n')) !== -1) {
-          const evt = buf.slice(0, sep)
-          buf = buf.slice(sep + 2)
-          for (const line of evt.split('\n')) {
-            const t = line.trim()
-            if (!t.startsWith('data:')) continue
-            const payload = t.slice(5).trim()
-            if (!payload || payload === '[DONE]') continue
-            try {
-              const parsed = JSON.parse(payload)
-              const tok = parsed.choices?.[0]?.delta?.content
-              if (tok) yield tok
-            } catch { /* ignore */ }
-          }
-        }
-      }
+
+      yield* parseChatSse(res.body)
     },
   }
 }
