@@ -24,7 +24,9 @@ export default function Home() {
           if (msg.type === 'text' && msg.data?.text) {
             setTranscript((t) => [...t.slice(-20), msg.data.text])
           }
-        } catch {}
+        } catch {
+          // ignore malformed frames
+        }
       }
       // Wire microphone PCM frames to ws (real impl would resample to 16kHz mono)
       const ctx = new AudioContext({ sampleRate: 16000 })
