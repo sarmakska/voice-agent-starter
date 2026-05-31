@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "test": "vitest"
+    "test": "vitest run"
   },
   "dependencies": {
     "fastify": "^5.0.0",
