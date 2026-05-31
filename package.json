@@ -10,9 +10,10 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm --parallel -r dev",
+    "typecheck": "pnpm -r --if-present typecheck",
     "build": "pnpm -r build",
-    "test": "pnpm -r test"
+    "test": "pnpm -r --if-present test"
   },
   "engines": { "node": ">=22" },
-  "packageManager": "pnpm@10"
+  "packageManager": "pnpm@10.0.0"
 }
