@@ -21,7 +21,7 @@ import { getSttAdapter, type SttAdapter } from '../adapters/stt/registry.js'
 import { getLlmAdapter, type LlmAdapter, type ChatMessage, type ToolCall } from '../adapters/llm/registry.js'
 import { getTtsAdapter, type TtsAdapter } from '../adapters/tts/registry.js'
 import { defaultTools, ToolRegistry } from './tools.js'
-import { detectVoice } from './vad.js'
+import { Vad, type VadOptions } from './vad.js'
 
 export type State = 'IDLE' | 'LISTEN' | 'THINK' | 'SPEAK'
 
@@ -46,6 +46,8 @@ export interface OrchestratorDeps {
   silenceFramesToFlush?: number
   /** Max tool-call rounds per turn before giving up, guards runaway loops. */
   maxToolRounds?: number
+  /** Hysteresis and hangover tuning for the per-session voice detector. */
+  vad?: VadOptions
 }
 
 const MAX_HISTORY = 20
@@ -61,6 +63,7 @@ export class Orchestrator {
   private readonly tools: ToolRegistry
   private readonly silenceFramesToFlush: number
   private readonly maxToolRounds: number
+  private readonly vad: Vad
   private silenceFrames = 0
   private history: ChatMessage[] = []
 
@@ -71,6 +74,9 @@ export class Orchestrator {
     this.tools = deps.tools ?? defaultTools()
     this.silenceFramesToFlush = deps.silenceFramesToFlush ?? 8
     this.maxToolRounds = deps.maxToolRounds ?? 3
+    // speechFrames 1 keeps onset latency low; the hangover absorbs transients
+    // so a single loud frame mid-output cannot trigger a false barge-in.
+    this.vad = new Vad({ speechFrames: 1, ...deps.vad })
   }
 
   get currentState(): State {
@@ -89,7 +95,7 @@ export class Orchestrator {
   async handle(msg: PipelineMessage): Promise<void> {
     if (msg.type !== 'audio' || !msg.payload) return
     const buf = Buffer.from(msg.payload, 'base64')
-    const isVoice = detectVoice(buf)
+    const isVoice = this.vad.process(buf)
 
     if (isVoice) {
       this.silenceFrames = 0
@@ -129,6 +135,7 @@ export class Orchestrator {
         await this.beginThink(final.text)
       } else {
         this.state = 'IDLE'
+        this.vad.reset()
         this.send({ type: 'control', data: 'idle' })
       }
     }
@@ -136,6 +143,9 @@ export class Orchestrator {
 
   private async beginThink(finalTranscript: string): Promise<void> {
     this.state = 'THINK'
+    // The utterance is captured; clear the detector so the next onset (a
+    // barge-in or the following turn) is judged from a clean baseline.
+    this.vad.reset()
     this.pushHistory({ role: 'user', content: finalTranscript })
 
     this.llmAbort = new AbortController()
@@ -216,6 +226,8 @@ export class Orchestrator {
     this.ttsAbort?.abort()
     this.tts.reset()
     this.stt.reset()
+    // The VAD has already confirmed speech for the barge-in; keep it in the
+    // speaking state so the fresh utterance continues without a re-onset delay.
   }
 
   private pushHistory(msg: ChatMessage): void {

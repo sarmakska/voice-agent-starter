@@ -29,6 +29,7 @@ describe('Orchestrator end-to-end', () => {
       tts,
       tools: new ToolRegistry(),
       silenceFramesToFlush: 3,
+      vad: { hangoverFrames: 1 }, // one quiet frame ends the utterance in this test
     })
     orc.attach(sink)
 
@@ -72,6 +73,7 @@ describe('Orchestrator end-to-end', () => {
       tts: fakeTts(),
       tools,
       silenceFramesToFlush: 2,
+      vad: { hangoverFrames: 1 },
     })
     orc.attach(sink)
 
@@ -102,6 +104,7 @@ describe('Orchestrator end-to-end', () => {
       tts: fakeTts(),
       tools: new ToolRegistry(),
       silenceFramesToFlush: 1,
+      vad: { hangoverFrames: 1 },
     })
     orc.attach(sink)
 
