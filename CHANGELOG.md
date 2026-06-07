@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- Stateful voice activity detector (`Vad` in `apps/server/src/pipeline/vad.ts`) with hysteresis and hangover. Separate enter and exit thresholds stop energy near a boundary rattling the decision frame by frame, and a run of confirming frames is required before the decision flips, so a single loud transient cannot trigger a false barge-in and a brief intra-word dip cannot end the utterance early. The orchestrator runs one detector per session, tunable through a new `vad` option (`enterThreshold`, `exitThreshold`, `speechFrames`, `hangoverFrames`). The stateless `frameRms` primitive is exported alongside `detectVoice` for callers that want a pure energy gate. Covered by eight new unit tests.
 - Groq Llama 4 LLM adapter, now the default LLM. Runs on the Groq LPU inference stack for a sub-300ms first-token target. OpenAI-compatible streaming through the shared SSE reader.
 - Whisper.cpp streaming STT adapter, now the default STT. Self-hosted, no per-minute cost. Approximates streaming by transcribing a growing window for live partials and finalising on trailing silence.
 - OpenTTS adapter with Coqui XTTS v2 voices, now the default TTS. Self-hosted, open-source, natural multilingual speech. Synthesises sentence by sentence to keep time-to-first-audio low.

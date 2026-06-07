@@ -29,7 +29,7 @@ graph TD
   Browser[Browser microphone]
   Browser -->|WebSocket PCM16| SRV[Fastify server]
   SRV --> ORC[Orchestrator state machine]
-  ORC --> VAD[RMS voice activity detector]
+  ORC --> VAD[Hysteresis + hangover VAD]
   ORC --> STT[Streaming STT]
   ORC --> LLM[Streaming LLM]
   ORC --> TOOLS[Tool registry]
@@ -49,7 +49,7 @@ The orchestrator owns one voice session and runs an IDLE to LISTEN to THINK to S
 
 | Stage | P50 target | Notes |
 |---|---|---|
-| Mic to VAD | 30ms | RMS VAD on PCM frames |
+| Mic to VAD | 30ms | Hysteresis VAD on PCM frames |
 | STT first partial | 250ms | Whisper.cpp growing-window transcription |
 | LLM first token | 250ms | Groq Llama 4 on the LPU stack |
 | TTS first audio chunk | 250ms | OpenTTS XTTS v2, first sentence |
@@ -59,7 +59,7 @@ The orchestrator owns one voice session and runs an IDLE to LISTEN to THINK to S
 
 - **Duplex orchestrator** (`apps/server/src/pipeline/orchestrator.ts`): an IDLE to LISTEN to THINK to SPEAK state machine that owns one voice session, hands the first LLM token straight to TTS, handles barge-in by aborting the LLM and TTS streams mid-flight, and runs function-call passthrough.
 - **Function-call passthrough** (`apps/server/src/pipeline/tools.ts`): the LLM is advertised the registered tools, the server executes the matching handler, and the result is fed back so the model answers with grounded data. Ships with `get_time` and `add_numbers` and a clean seam for your own tools.
-- **Voice activity detector** (`apps/server/src/pipeline/vad.ts`): an RMS-based VAD with a clean seam for dropping in silero-vad-onnx for real workloads.
+- **Voice activity detector** (`apps/server/src/pipeline/vad.ts`): a stateful RMS VAD with hysteresis (separate enter and exit thresholds) and a hangover counter, so a single loud transient cannot trigger a false barge-in and a brief intra-word dip cannot end the utterance early. Tunable per session through the orchestrator's `vad` option, with a clean seam for dropping in silero-vad-onnx for real workloads.
 - **Pluggable adapters** for STT (Whisper.cpp, Deepgram, OpenAI Whisper), LLM (Groq, SarmaLink-AI, OpenAI), and TTS (OpenTTS, Cartesia, ElevenLabs), each selected by an environment variable through a small registry. The three OpenAI-compatible LLM adapters share one streaming SSE reader.
 - **Fastify 5 server** exposing a `/health` endpoint that reports the active providers and a `/voice` WebSocket, plus a **Next.js 15 web client** that captures audio and renders transcripts.
 - **Real end-to-end tests**: the full pipeline driven through fake adapters and a fake socket, covering the loop, barge-in cancellation, and function-call passthrough, plus per-adapter unit tests. CI runs lint, typecheck, build, and tests on every push and pull request.

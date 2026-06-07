@@ -10,7 +10,7 @@ One voice session maps to one `Orchestrator` instance, created when the browser 
 graph TD
   Browser[Browser microphone] -->|WebSocket PCM16| SRV[Fastify server]
   SRV --> ORC[Orchestrator state machine]
-  ORC --> VAD[RMS voice activity detector]
+  ORC --> VAD[Hysteresis + hangover VAD]
   ORC --> STT[Streaming STT adapter]
   ORC --> LLM[Streaming LLM adapter]
   ORC --> TOOLS[Tool registry]
@@ -36,14 +36,14 @@ stateDiagram-v2
 ```
 
 1. **Capture.** The browser runs the microphone through an `AudioContext` resampled to 16kHz mono, converts each frame to PCM16, base64-encodes it, and sends a `{ type: 'audio', payload }` message. The orchestrator does not care which transport delivers the frames.
-2. **Detect.** Each frame runs through the RMS-threshold VAD in `vad.ts`. When energy crosses the threshold the machine moves IDLE to LISTEN.
+2. **Detect.** Each frame runs through the stateful VAD in `vad.ts`. The detector uses hysteresis (a higher enter threshold than exit threshold) and a hangover (a run of confirming frames before the decision flips), so a single loud transient cannot trigger a false barge-in and a brief intra-word dip cannot end the utterance early. When speech is confirmed the machine moves IDLE to LISTEN.
 3. **Transcribe.** While in LISTEN, voice frames feed the selected STT adapter for live partials. Trailing silence past a frame threshold flushes the adapter for a final transcript, which triggers the move to THINK.
 4. **Think.** The final transcript is appended to the conversation and streamed to the LLM adapter with the registered tools advertised. The first token flips the machine to SPEAK and is fed straight into TTS, so audio starts before the completion finishes.
 5. **Speak.** The TTS adapter synthesises sentence by sentence and the orchestrator streams PCM chunks back to the client as base64. When the turn drains, the machine returns to IDLE.
 
 ## Barge-in
 
-If the VAD detects speech while the machine is in THINK or SPEAK, the orchestrator aborts both the LLM and TTS streams through their `AbortController`s, resets the STT and TTS adapters, emits a `barge-in` control message, and drops to LISTEN. Because the abort signal propagates through the `fetch` body reader and the `for await` loops, there are no orphaned streams talking over the user.
+If the VAD confirms speech while the machine is in THINK or SPEAK, the orchestrator aborts both the LLM and TTS streams through their `AbortController`s, resets the STT and TTS adapters, emits a `barge-in` control message, and drops to LISTEN. Because the abort signal propagates through the `fetch` body reader and the `for await` loops, there are no orphaned streams talking over the user. The "confirms" matters here: the VAD's hysteresis and hangover mean a stray frame of room noise or a keyboard tap will not abort a turn, which is the most common false-interruption complaint in a full-duplex agent. The per-session VAD is tuned through the orchestrator's `vad` option (`enterThreshold`, `exitThreshold`, `speechFrames`, `hangoverFrames`).
 
 ## Function-call passthrough
 
@@ -68,7 +68,7 @@ The three OpenAI-compatible LLM adapters share `sse.ts` for stream parsing and w
 | `apps/server/src/index.ts` | Fastify server, `/health` and `/voice` WebSocket, message dispatch |
 | `apps/server/src/pipeline/orchestrator.ts` | Duplex state machine, barge-in, function-call passthrough |
 | `apps/server/src/pipeline/tools.ts` | Tool registry and default tools |
-| `apps/server/src/pipeline/vad.ts` | RMS-threshold voice activity detection |
+| `apps/server/src/pipeline/vad.ts` | Stateful VAD with hysteresis and hangover, plus the stateless RMS primitive |
 | `apps/server/src/adapters/audio.ts` | PCM/WAV conversion, sentence splitting |
 | `apps/server/src/adapters/llm/sse.ts` | OpenAI-compatible SSE reader and wire mapping |
 | `apps/server/src/adapters/{stt,llm,tts}/*.ts` | Provider adapters and registries |

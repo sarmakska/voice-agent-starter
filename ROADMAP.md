@@ -3,7 +3,7 @@
 ## Shipped (1.1.0)
 
 - [x] Full-duplex orchestrator with an IDLE / LISTEN / THINK / SPEAK state machine
-- [x] RMS-threshold VAD with a trailing-silence flush
+- [x] Stateful VAD with hysteresis and hangover and a trailing-silence flush
 - [x] Streaming STT, LLM, and TTS pipeline with token-to-audio handoff on the first token
 - [x] Self-hosted default stack: Groq Llama 4, Whisper.cpp, OpenTTS Coqui XTTS v2
 - [x] Pluggable adapters per layer (Groq, SarmaLink-AI, OpenAI, Whisper.cpp, Deepgram, OpenAI Whisper, OpenTTS, Cartesia, ElevenLabs)
@@ -16,7 +16,7 @@
 
 ## Planned
 
-- [ ] Production VAD (silero-vad-onnx) behind the existing `detectVoice` seam
+- [ ] Production VAD (silero-vad-onnx) behind the existing `frameRms` seam, keeping the hysteresis and hangover layer on top
 - [ ] Word-level interim results via the Deepgram streaming WebSocket SDK
 - [ ] Multi-language hot swap mid-call
 - [ ] Per-adapter latency dashboards
